@@ -1,27 +1,55 @@
+import aiohttp
 import asyncio
+import aiofiles
 import json
 
-import aiohttp
+MAX_CONCURRENT_REQUESTS = 5
 
 
-async def fetch_url(url, session, semaphore):
-    async with semaphore:
-        try:
-            async with session.get(url) as response:
-                return {"url": url, "status_code": response.status}
-        except aiohttp.ClientError:
-            return {"url": url, "status_code": 0}
+async def fetch_url(session, url):
+    try:
+        async with session.get(
+            url, timeout=aiohttp.ClientTimeout(total=10)
+        ) as response:
+            return url, response.status
+    except (aiohttp.ClientError, asyncio.TimeoutError) as e:
+        print(f"Error fetching {url}: {e}")
+        return url, 0
+
+
+async def worker(session, queue, results):
+    while True:
+        url = await queue.get()
+        if url is None:
+            break
+        result = await fetch_url(session, url)
+        results.append(result)
+        queue.task_done()
 
 
 async def fetch_urls(urls: list[str], file_path: str):
-    semaphore = asyncio.Semaphore(5)
-    async with aiohttp.ClientSession() as session:
-        tasks = [fetch_url(url, session, semaphore) for url in urls]
-        results = await asyncio.gather(*tasks)
+    queue = asyncio.Queue()
+    results = []
 
-    with open(file_path, "w") as f:
-        for result in results:
-            f.write(json.dumps(result) + "\n")
+    async with aiohttp.ClientSession() as session:
+        workers = [
+            asyncio.create_task(worker(session, queue, results))
+            for _ in range(MAX_CONCURRENT_REQUESTS)
+        ]
+
+        for url in urls:
+            await queue.put(url)
+
+        await queue.join()
+
+        for _ in range(MAX_CONCURRENT_REQUESTS):
+            await queue.put(None)
+        await asyncio.gather(*workers)
+
+    async with aiofiles.open(file_path, mode="w") as out_f:
+        for url, status_code in results:
+            result = {"url": url, "status_code": status_code}
+            await out_f.write(json.dumps(result) + "\n")
 
 
 if __name__ == "__main__":

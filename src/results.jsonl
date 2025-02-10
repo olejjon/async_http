@@ -1,4 +1,4 @@
-{"url": "https://example.com", "status_code": 200}
-{"url": "https://httpbin.org/status/404", "status_code": 404}
 {"url": "https://nonexistent.url", "status_code": 0}
 {"url": "https://keyauto.m4.systems/#/desktop", "status_code": 200}
+{"url": "https://example.com", "status_code": 200}
+{"url": "https://httpbin.org/status/404", "status_code": 404}
